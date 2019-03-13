@@ -38,12 +38,13 @@ data2 = [[0, 400], [.05, 402], [.1, 405], [0, 430], [.05, 422], [.15, 410], [.15
 #best so far is 362, 397, 47, 46, .57, .29, -7, -2, 0s
 
 #the one called "data" actually runs... make it read from files or something
-data = [[0, 539], [.1, 533], [.2, 523], [.3, 517], [.42, 509], [.52, 504], [.64, 497], [.75, 487], [.84, 483], [.95, 473]]
+#data3 = [[0, 539], [.1, 533], [.2, 523], [.3, 517], [.42, 509], [.52, 504], [.64, 497], [.75, 487], [.84, 483], [.95, 473]]
+data = [[0, 315],[.1, 313],[.2,311],[.3,310],[.4,308],[.5,308],[.6,309],[.7,310],[.8,311],[.9,312],[1,313]]
 
-runningParams = [[0]*13]*10 #where all the seeds are stored, can change number of seeds
+runningParams = [[0]*13]*8 #where all the seeds are stored, can change number of seeds
 params = [0]*13 #set of params selected as best out of runningParams... again get rid of global
 #params are in order of t1, t2, s1, s2, a1, a2, b1, b2, c1, c2, A1, A2, A3 (can disable last n constants by commenting in init and editing adjust function)
-sensitivities = [10, 10, 1, 1, .01, .01, .02, .02, 500, 500, .1, .1, .1] #approximate scales that params vary on
+sensitivities = [10, 10, 1, 1, .1, .1, .2, .2, 500, 500, .1, .1, .1] #approximate scales that params vary on
 avgDelG = 10000000 #measure of avg delG over the region of interst
 
 calcCounter = 0
@@ -66,6 +67,44 @@ def init(paramsa): #randomly places parameters... ranges should be tweaked
     #paramsa[12] = -2 + 4*random.random()    #A3
     calcAvgDelG(paramsa)
 
+def estimateCarbAcidParams(params, len1, len2):# using klotz+rosenberg ch 22
+    baseMethP = [-74.85, 186.19, 16.69, 65.61, -9.96] #dH, S, a, b, c
+    addFirstCP = [-9.83, 43.30, 9.92, 103.81, -43.51]
+    add11CP = [-21.09, 43.68, -3.68, 98.16, -42.26]
+    add12CP = [-20.59, 38.87, 1.46, 81.42, -31.46]
+    subCOOH = [-350.17, 53.01, 7.91, 29.20, -26.65]
+    carbAcidMeltTempDict = [0, 8.4, 16.6, -20.8, -5.5, -34.5, -4, -7.5, 16.3, 12, 31, 28.5, 45, 41.5, 55, 52, 63, 61, 70, 69, 76]
+
+    totalP1 = baseMethP
+    if len1>1: totalP1 = [totalP1[i] + addFirstCP[i] for i in range(len(totalP1))]
+    if len1>2: totalP1 = [totalP1[i] + add11CP[i] for i in range(len(totalP1))]
+    if len1>3: totalP1 = [totalP1[i] + add12CP[i]*(len1-3) for i in range(len(totalP1))]
+    totalP1 = [totalP1[i]+subCOOH[i] for i in range(len(totalP1))]
+
+    totalP2 = baseMethP
+    if len2>1: totalP2 = [totalP2[i] + addFirstCP[i] for i in range(len(totalP2))]
+    if len2>2: totalP2 = [totalP2[i] + add11CP[i] for i in range(len(totalP2))]
+    if len2>3: totalP2 = [totalP2[i] + add12CP[i]*(len2-3) for i in range(len(totalP2))]
+    totalP2 = [totalP2[i]+subCOOH[i] for i in range(len(totalP2))]
+
+    params[0]=273+carbAcidMeltTempDict[len1] #t
+    params[1]=273+carbAcidMeltTempDict[len2]
+    params[2]=totalP1[1] #s
+    params[3]=totalP2[1]
+    params[4]=totalP1[2] #a
+    params[5]=totalP2[2]
+    params[6]=totalP1[3] #b
+    params[7]=totalP2[3]
+    #params[8]=totalP1[4] #c (coefficient of T^2)
+    #params[9]=totalP2[4]
+    perturb(params)
+
+def perturb(params):
+    for i in range(8):
+        params[i]+=(.5-random.random())*sensitivities[i]*10
+
+
+
 def delG(x, y, paramsa = None): #calculates difference in gibbs energy is for given x, y
     if paramsa == None:
         paramsa = params
@@ -82,14 +121,15 @@ def delG(x, y, paramsa = None): #calculates difference in gibbs energy is for gi
     rpart = paramsa[10]*x*(1-x) + paramsa[11]*x*(1-x)*(1-2*x) + paramsa[12]*x*(1-x)*(1-2*x)*(1-2*x)
     return  g1+g2+rpart
 
-def calcAvgDelG(paramsA): #CURRENTLY USES LOG of delG! u can disable log they both seem to work ok
+def calcAvgDelG(paramsA):
     global calcCounter
     calcCounter += 1
     if calcCounter>=200:    #so this function only really runs every once in a while
         numRands = 1000     #number of random points to estimate average cost
         outCost = 0
         for i in range(numRands):
-            outCost += math.log(abs(delG(random.random(), 100+900*random.random(), paramsA)))
+            randG = delG(random.random(), 100+900*random.random(), paramsA)
+            outCost += (math.pow(abs(randG), 1)) #* math.pow((math.log(abs(randG))), 2)
         avgDelG = (outCost/numRands)
         calcCounter = 0
 
@@ -107,7 +147,7 @@ def costO(points, paramsa):#delG cost
             sys.exit()
     return (dataDelG/len(points))/math.pow(avgDelG, .4)
 
-def costUnused(points, paramsa):#orthogonal cost (doesn't rn work)
+def costunused(points, paramsa):#orthogonal cost (doesn't rn work)
     tDist = 0
     xDist = 0
     sumDists = 0
@@ -152,7 +192,7 @@ def adjust(paramsa):
         gradient[i] = (costO(data, paramsa)-cost0)/(sensitivities[i]*.00002)
         paramsa[i] -= diff
     for i in range(13):
-        movement = sensitivities[i]*gradient[i]*.0000002 #lower this if it blows up, increase it if it runs fine
+        movement = sensitivities[i]*gradient[i]*.00002 #lower this if it blows up, increase it if it runs fine
         if movement>100:
             movement=100
         if movement<-100:
@@ -170,7 +210,7 @@ def tabulate(x, y, f):
 def graph2():
     plt.figure()
     xlist = np.linspace(0, 1, 120)
-    ylist = np.linspace(100, 800, 200)
+    ylist = np.linspace(200, 350, 200)
     zlist = tabulate(xlist, ylist, delG)
     for i in range(len(zlist)):
         for j in range(len(zlist[0])):
@@ -215,8 +255,8 @@ def dCost(params):
     return newCost/prevCost
 
 def runParams():
-    runAllSeeds = 1000 #number of times to adjust seeds before pruning
-    tolerance = .999995 #if adjust helps lower cost by less than this number, stop adjusting
+    runAllSeeds = 3000 #number of times to adjust seeds before pruning
+    tolerance = .99999999 #if adjust helps lower cost by less than this number, stop adjusting
     #increase to make it run for longer
 
     startTime0 = time.time()
@@ -227,6 +267,9 @@ def runParams():
     for i in range(len(runningParams)):
         calcCounter=10000 #this is to make calcAvgDelG run
         init(runningParams[i])
+        if(i==0): #try estimated params for first run!
+            estimateCarbAcidParams(runningParams[i], 12, 13)
+            print(runningParams[i])
         for j in range(runAllSeeds):
             adjust(runningParams[i])
         print(costO(data, runningParams[i]))
@@ -234,6 +277,7 @@ def runParams():
             minCost=costO(data, runningParams[i])
             minAttempt=i
             minParams = [runningParams[i][j] for j in range(13)]
+    print('ran all params once')
     global params
     params = minParams
     for j in range(1000):
